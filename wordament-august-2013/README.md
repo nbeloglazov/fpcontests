@@ -1,13 +1,18 @@
 # wordament
 
-A Clojure library designed to ... well, that part is up to you.
+Решение задачи августовского конкурса ФП: http://haskell98.blogspot.co.uk/2013/08/2013.html
 
-## Usage
+Используется словарь Зализняка: http://speakrus.ru/dict/index.htm
 
-FIXME
+Алгоритм: поиск в глубину с использованием [дерева Бора](http://ru.wikipedia.org/wiki/Префиксное_дерево). Поле не очень большое и поэтому обычный поиск в глубину без особых эвристик работает весьма быстро.
 
-## License
+## Запуск
 
-Copyright © 2013 FIXME
+Для запуска нужен [leiningen 2](https://github.com/technomancy/leiningen). Запустить можно при помощи команды:
 
-Distributed under the Eclipse Public License, the same as Clojure.
+```shell
+lein run input.txt
+```
+
+В `input.txt` лежит поле с буквами.
+
