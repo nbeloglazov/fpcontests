@@ -32,10 +32,9 @@
 (defn dfs [cur visited tree accum field]
   (if (nil? tree) []
       (let [res (if (:word? tree) #{accum} #{})
-            possible-moves (remove visited (neibs cur))
             try-neib #(let [value (get-in field %)]
                         (dfs % (conj visited %) (tree value) (str accum value) field))]
-        (->> (map try-neib possible-moves) (reduce union res)))))
+        (->> (neibs cur) (remove visited) (map try-neib) (reduce union res)))))
 
 (defn find-words [field]
   (let [tree (time (reduce add-word {} (load-dictionary)))
