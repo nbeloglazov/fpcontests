@@ -1,0 +1,27 @@
+[
+ {"fuel": "FL-T400 Fuel Tank",
+  "engine": "LV-T30 Liquid Fuel Engine",
+  "central": true,
+  "numSideParts": 0,
+  "numEngines": 1,
+  "height": 1},
+ {"fuel": "FL-T400 Fuel Tank",
+  "engine": "LV-909 Liquid Fuel Engine",
+  "central": false,
+  "numSideParts": 2,
+  "numEngines": 2,
+  "height": 1},
+{"fuel": "Rockomax X200-32 Fuel Tank",
+  "engine": "Rockomax \"Skipper\" Liquid Engine",
+  "central": true,
+  "numSideParts": 2,
+  "numEngines": 3,
+  "height": 1},
+ {"fuel": "Rockomax X200-32 Fuel Tank",
+  "engine": "Rockomax \"Mainsail\" Liquid Engine",
+  "central": true,
+  "numSideParts": 6,
+  "numEngines": 7,
+  "height": 2}
+]
+
