@@ -7,7 +7,7 @@
 Для запуска нужен [leiningen 2](https://github.com/technomancy/leiningen). Запустить можно при помощи команды:
 
 ```shell
-lein run 10.4 7000
+lein run 10.4 7000 [2]
 ```
 Параметры:
 
