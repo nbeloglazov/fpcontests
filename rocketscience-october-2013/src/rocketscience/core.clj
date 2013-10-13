@@ -107,6 +107,10 @@
 
 (def ^:dynamic *best-dvs* nil)
 
+(def ^:dynamic *cur-mass* nil)
+
+(def best-mass (atom 1000))
+
 (defn update-best [mass dv height]
   (if *best-dvs*
     (let [mass (int (Math/ceil mass))]
@@ -116,15 +120,17 @@
         false))
     true))
 
-(defn find-stage
+(defn find-stage-full
   ([max-mass payload dv]
      (binding [*max-stages* 7
-               *best-dvs* (atom (vec (repeat 8 (create 0 (inc max-mass)))))]
-       (find-stage max-mass 0 (+ payload 1) 7 dv 0 true 1)))
+               *best-dvs* (atom (vec (repeat 8 (create 0 (inc max-mass)))))
+               *cur-mass* max-mass]
+       (find-stage-full max-mass 0 payload 7 dv 0 true 1)))
   ([max-mass current-mass payload allowed-height left-dv got-dv first? depth]
      (cond (< max-mass payload) nil
         (<= left-dv 0) []
         (<= allowed-height 0) nil
+        (< @best-mass *cur-mass*) nil
         (> depth *max-stages*) nil
         :else (let [expected-thurst (* max-mass (if (<= got-dv 5000) 15 5))
                     allowed-mass (- max-mass payload)]
@@ -191,7 +197,7 @@
                              :when (update-best total-mass total-dv (- allowed-height height))
 
                              ; calculate last stages
-                             :let [next-stages (find-stage (- max-mass stage-mass)
+                             :let [next-stages (find-stage-full (- max-mass stage-mass)
                                                            total-mass
                                                            payload
                                                            (- allowed-height height)
@@ -207,8 +213,9 @@
                                             (= :first (type-of-stage (last next-stages)))))]
                          (conj next-stages stage)))))))
 
-(def number-of-workers (.availableProcessors (Runtime/getRuntime))
-  )
+(def find-stage (memoize find-stage-full))
+
+(def number-of-workers (.availableProcessors (Runtime/getRuntime)))
 
 (def task-queue (java.util.concurrent.LinkedBlockingQueue.))
 (def result-queue (java.util.concurrent.LinkedBlockingQueue.))
@@ -248,7 +255,8 @@
 
 (defn any-solution [payload dv time-left]
   (info "find any initial solution")
-  (let [initial-masses (range 200 701 50)]
+  (let [initial-masses (concat (range 200 701 50)
+                               (range 500 701 2))]
     (doseq [mass initial-masses]
       (send-task mass payload dv))
     (loop [left (set initial-masses)]
@@ -261,16 +269,19 @@
                       (do (info "no solution for mass " max-mass)
                           (recur (disj left max-mass)))))))))
 
-(defn save-solution [sol payload]
-  (info "\nfound solution with mass" (mass sol true payload) "and dv" (dv sol payload))
-  (info "saved to solution.json\n")
-  (spit "solution.json" (generate-string sol {:pretty true})))
+(defn save-solution [sol payload need-dv]
+  (when-let [actual-dv (dv sol payload)]
+    (when (>= actual-dv need-dv)
+     (info "\nfound solution with mass" (mass sol true payload) "and dv" actual-dv)
+     (info "saved to solution.json\n")
+     (spit "solution.json" (generate-string sol {:pretty true})))))
 
 (defn wait-for-improved-solution [current-mass time-left masses]
   (loop [left (set masses)]
     (info "time left" (int (time-left)) "sec")
     (if (pos? (time-left))
       (let [{:keys [solution max-mass] :as result} (get-result)]
+;        (info current-mass "got" max-mass (not (nil? solution)))
         (cond (>= max-mass current-mass) (recur left)
               solution result
               :else (do (info "no solution for mass" max-mass)
@@ -280,11 +291,12 @@
 (defn improve-solution [max-mass payload dv time-left]
   (discard-tasks)
   (let [masses (concat (range (- max-mass 10) max-mass)
-                       (range (- max-mass 11) (- max-mass -50) -1))]
+                       (range (- max-mass 11) (- max-mass 50) -1))]
     (doseq [mass masses]
       (send-task mass payload dv))
     (when-let [improved (wait-for-improved-solution max-mass time-left masses)]
-      (do (save-solution (:solution improved) payload)
+      (do (save-solution (:solution improved) payload dv)
+          (swap! best-mass min (:max-mass improved))
           (recur (:max-mass improved) payload dv time-left)))))
 
 ;(find-stage 200 1.5 12000)
@@ -297,7 +309,7 @@
         sol (any-solution payload dv time-left)]
     (discard-tasks)
     (when sol
-      (save-solution sol payload)
+      (save-solution sol payload dv)
       (improve-solution (int (mass sol true payload)) payload dv time-left)))
   (discard-tasks)
   (kill-all-workers)
