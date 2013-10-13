@@ -1,7 +1,7 @@
 (ns rocketscience.core
-  (:require [clojure.data.json :as json]
-            [rocketscience.segment-tree :refer :all]
-            [cheshire.core :refer [generate-string]])
+  (:require [rocketscience.segment-tree :refer :all]
+            [cheshire.core :refer [generate-string]]
+            [clojure.tools.logging :refer [info debug]])
   (:gen-class))
 
 (def tanks (into {}
@@ -116,52 +116,6 @@
         false))
     true))
 
-(defn total-height [stages]
-  (apply + (map :height stages)))
-
-(defn indent [stages]
-  (apply str (repeat (count stages) "  ")))
-
-(defn brute-force [max-mass payload need-dv stages]
-;  (println (indent stages) max-mass)
-;  (println (generate-string stages {:pretty true}))
-  (cond (< max-mass payload) nil
-        (if-let [d (dv stages payload)]
-          (>= d need-dv)
-          false) stages
-         :else (let [got-min-dv (dv stages (dec max-mass))]
-                (->> (for [central? [true false]
-                           :when got-min-dv
-                           :let [accel (if (< got-min-dv 5000) 15 5)]
-                           engine (vals engines)
-                           num-side-parts [0 2 3 4 6]
-                           :when (or central? (pos? num-side-parts))
-                           num-engines (cond (zero? num-side-parts) [1]
-                                             (not central?) [num-side-parts]
-                                             :else [1 (inc num-side-parts)])
-                           :when (or (not= (:name engine) "Toroidal Aerospike Rocket")
-                                     (= num-engines num-side-parts))
-                           :let [max-mass (min max-mass (/ (* num-engines (:thurst engine))
-                                                           accel))]
-                           tank (vals tanks)
-                           height (range 1 (inc (min 3 (- 7 (total-height stages)))))
-                           :let [total-parts (+ num-side-parts (if central? 1 0))
-                                 stage-mass (+ (* num-engines (:mass engine))
-                                               (* height total-parts (:m-full tank)))
-                                 stage {:engine (:name engine)
-                                        :fuel (:name tank)
-                                        :central central?
-                                        :numSideParts num-side-parts
-                                        :numEngines num-engines
-                                        :height height}]
-                           :when (<= (+ stage-mass payload) max-mass)
-                           :let [sol (brute-force (- max-mass stage-mass) payload need-dv (cons stage stages))]
-                           :when sol]
-                       sol)
-                     first))))
-
-;(brute-force 1000 10 7000 [])
-
 (defn find-stage
   ([max-mass payload dv]
      (binding [*max-stages* 7
@@ -253,54 +207,101 @@
                                             (= :first (type-of-stage (last next-stages)))))]
                          (conj next-stages stage)))))))
 
+(def number-of-workers (.availableProcessors (Runtime/getRuntime))
+  )
+
+(def task-queue (java.util.concurrent.LinkedBlockingQueue.))
+(def result-queue (java.util.concurrent.LinkedBlockingQueue.))
+
+(defn start-worker [id]
+  (debug "worker" id "waiting for task")
+  (let [task (.take task-queue)]
+    (if-not (= task :die)
+      (let [{:keys [time payload dv max-mass]} task]
+        (debug "worker" id "calculating for mass" max-mass)
+        (let [sol (find-stage max-mass payload dv)]
+          (.put result-queue (assoc task :solution sol))
+          (Thread/sleep 500)
+          (recur id)))
+      (debug "worker" id "got :die message"))))
+
+(defn start-all-workers []
+  (dotimes [id number-of-workers]
+    (future (start-worker id))))
+
+(defn kill-all-workers []
+  (info "killing all workers")
+  (dotimes [_ number-of-workers]
+    (.put task-queue :die)))
+
+(defn discard-tasks []
+  (.clear task-queue))
+
+(defn send-task [max-mass payload dv]
+  (.put task-queue {:max-mass max-mass
+                    :payload payload
+                    :dv dv
+                    :time (System/currentTimeMillis)}))
+
+(defn get-result []
+  (.take result-queue))
+
 (defn any-solution [payload dv time-left]
-  (println "find any initial solution")
-  (loop [mass 200]
-    (cond (> mass 700)
-          (println "mass can't be more than 700 tons. no solution found :(")
-
-          (pos? (time-left))
-          (do
-            (printf "\ntime left %d sec\n" (int (time-left)))
-            (println "trying mass " mass)
-            (if-let [stages (find-stage mass payload dv)]
-              stages
-              (recur (+ mass 100))))
-
-          :else
-          (println "time is up. no solution found :("))))
-
+  (info "find any initial solution")
+  (let [initial-masses (range 200 701 50)]
+    (doseq [mass initial-masses]
+      (send-task mass payload dv))
+    (loop [left (set initial-masses)]
+      (cond (empty? left) (info "mass can't be more than 700 tons. no solution found :(")
+            (neg? (time-left)) (info "time is up. no solution found :(")
+            :else (let [{:keys [max-mass solution]} (get-result)]
+                    (info "time left" (int (time-left)) "sec")
+                    (if solution
+                      solution
+                      (do (info "no solution for mass " max-mass)
+                          (recur (disj left max-mass)))))))))
 
 (defn save-solution [sol payload]
-  (println "\nfound solution with mass" (mass sol true payload) "and dv" (dv sol payload))
-  (println "saved to solution.json\n")
+  (info "\nfound solution with mass" (mass sol true payload) "and dv" (dv sol payload))
+  (info "saved to solution.json\n")
   (spit "solution.json" (generate-string sol {:pretty true})))
 
+(defn wait-for-improved-solution [current-mass time-left masses]
+  (loop [left (set masses)]
+    (info "time left" (int (time-left)) "sec")
+    (if (pos? (time-left))
+      (let [{:keys [solution max-mass] :as result} (get-result)]
+        (cond (>= max-mass current-mass) (recur left)
+              solution result
+              :else (do (info "no solution for mass" max-mass)
+                        (recur (disj left max-mass)))))
+      (info "time is up"))))
+
 (defn improve-solution [max-mass payload dv time-left]
-  (loop [max-mass max-mass
-         dx 10]
-    (let [cur-mass (- max-mass dx)]
-      (if (pos? (time-left))
-        (do (printf "time left %d sec\n" (int (time-left)))
-            (println "trying mass" cur-mass "\n")
-            (if-let [sol (find-stage cur-mass payload dv)]
-              (do (save-solution sol payload)
-                  (recur cur-mass 10))
-              (cond (= 1 dx) (recur max-mass 11)
-                    (> dx 10) (recur max-mass (inc dx))
-                    :else (recur max-mass (dec dx)))))
-        (println "time is up, check solution.json")))))
+  (discard-tasks)
+  (let [masses (concat (range (- max-mass 10) max-mass)
+                       (range (- max-mass 11) (- max-mass -50) -1))]
+    (doseq [mass masses]
+      (send-task mass payload dv))
+    (when-let [improved (wait-for-improved-solution max-mass time-left masses)]
+      (do (save-solution (:solution improved) payload)
+          (recur (:max-mass improved) payload dv time-left)))))
 
 ;(find-stage 200 1.5 12000)
 
 (defn run [payload dv timeout]
+  (start-all-workers)
   (let [start (System/currentTimeMillis)
         end (+ start (* timeout 60 1000))
         time-left #(/ (- end (System/currentTimeMillis)) 1000.0)
         sol (any-solution payload dv time-left)]
+    (discard-tasks)
     (when sol
       (save-solution sol payload)
-      (improve-solution (int (mass sol true payload)) payload dv time-left))))
+      (improve-solution (int (mass sol true payload)) payload dv time-left)))
+  (discard-tasks)
+  (kill-all-workers)
+  (shutdown-agents))
 
 
 (defn -main [& [payload dv timeout]]
