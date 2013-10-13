@@ -1,0 +1,29 @@
+[ {
+  "engine" : "LV-N Atomic Rocket Engine",
+  "fuel" : "FL-T200 Fuel Tank",
+  "central" : true,
+  "numSideParts" : 6,
+  "numEngines" : 1,
+  "height" : 1
+}, {
+  "engine" : "LV-T30 Liquid Fuel Engine",
+  "fuel" : "Rockomax X200-16 Fuel Tank",
+  "central" : true,
+  "numSideParts" : 2,
+  "numEngines" : 3,
+  "height" : 1
+}, {
+  "engine" : "LV-T30 Liquid Fuel Engine",
+  "fuel" : "FL-T400 Fuel Tank",
+  "central" : true,
+  "numSideParts" : 6,
+  "numEngines" : 7,
+  "height" : 3
+}, {
+  "engine" : "Rockomax \"Skipper\" Liquid Engine",
+  "fuel" : "FL-T100 Fuel Tank",
+  "central" : true,
+  "numSideParts" : 2,
+  "numEngines" : 3,
+  "height" : 2
+} ]
