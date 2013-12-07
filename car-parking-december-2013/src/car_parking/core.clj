@@ -98,13 +98,6 @@
     (println))
   (println "Total steps" (count solution)))
 
-(def st {:cars {:# {:type :horizontal
-                    :body [[0 0]]}
-                :1 {:type :vertical
-                    :body [[0 1]]}}
-        :final-cell [0 2]
-        :empty-cells #{[0 2] [1 0] [1 1] [1 2]}})
-
 (defn build-car [cells]
   (let [left (->> (map second cells) (apply min))
         right (->> (map second cells) (apply max))]
